@@ -1,0 +1,1 @@
+gcc -o output_executable main.c $(find . -name '*.c' ! -name 'main.c')
