@@ -25,6 +25,13 @@ static bool isDigit(char c)
   return c >= '0' && c <= '9';
 }
 
+static bool isAlpha(char c) // Missing isAlpha() function definition
+{
+  return (c >= 'a' && c <= 'z') ||
+         (c >= 'A' && c <= 'Z') ||
+         c == '_';
+}
+
 static bool isAtEnd()
 {
   return *scanner.current == '\0';
