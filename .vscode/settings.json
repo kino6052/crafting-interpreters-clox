@@ -2,6 +2,7 @@
   "files.associations": {
     "common.h": "c",
     "chunk.h": "c",
-    "stdbool.h": "c"
+    "stdbool.h": "c",
+    "type_traits": "cpp"
   }
 }
