@@ -3,6 +3,7 @@
     "common.h": "c",
     "chunk.h": "c",
     "stdbool.h": "c",
-    "type_traits": "cpp"
+    "type_traits": "cpp",
+    "compiler.h": "c"
   }
 }
