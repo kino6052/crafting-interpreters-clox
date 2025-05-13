@@ -65,6 +65,12 @@ void initVM()
 {
   resetStack();
   vm.objects = NULL;
+  vm.bytesAllocated = 0;
+  vm.nextGC = 1024 * 1024;
+  vm.grayCount = 0;
+  vm.grayCapacity = 0;
+  vm.grayStack = NULL;
+
   initTable(&vm.strings);
   initTable(&vm.globals);
   defineNative("clock", clockNative);
@@ -94,73 +100,88 @@ static Value peek(int distance)
   return vm.stackTop[-1 - distance];
 }
 
-static ObjUpvalue* captureUpvalue(Value* local) {
-  ObjUpvalue* prevUpvalue = NULL;
-  ObjUpvalue* upvalue = vm.openUpvalues;
-  while (upvalue != NULL && upvalue->location > local) {
+static ObjUpvalue *captureUpvalue(Value *local)
+{
+  ObjUpvalue *prevUpvalue = NULL;
+  ObjUpvalue *upvalue = vm.openUpvalues;
+  while (upvalue != NULL && upvalue->location > local)
+  {
     prevUpvalue = upvalue;
     upvalue = upvalue->next;
   }
 
-  if (upvalue != NULL && upvalue->location == local) {
+  if (upvalue != NULL && upvalue->location == local)
+  {
     return upvalue;
   }
 
-  ObjUpvalue* createdUpvalue = newUpvalue(local);
+  ObjUpvalue *createdUpvalue = newUpvalue(local);
   createdUpvalue->next = upvalue;
 
-  if (prevUpvalue == NULL) {
+  if (prevUpvalue == NULL)
+  {
     vm.openUpvalues = createdUpvalue;
-  } else {
+  }
+  else
+  {
     prevUpvalue->next = createdUpvalue;
   }
 
   return createdUpvalue;
 }
 
-static void closeUpvalues(Value* last) {
+static void closeUpvalues(Value *last)
+{
   while (vm.openUpvalues != NULL &&
-         vm.openUpvalues->location >= last) {
-    ObjUpvalue* upvalue = vm.openUpvalues;
+         vm.openUpvalues->location >= last)
+  {
+    ObjUpvalue *upvalue = vm.openUpvalues;
     upvalue->closed = *upvalue->location;
     upvalue->location = &upvalue->closed;
     vm.openUpvalues = upvalue->next;
   }
 }
 
-static bool call(ObjClosure* closure, int argCount) {
-  if (argCount != closure->function->arity) {
+static bool call(ObjClosure *closure, int argCount)
+{
+  if (argCount != closure->function->arity)
+  {
     runtimeError("Expected %d arguments but got %d.",
-        closure->function->arity, argCount);
+                 closure->function->arity, argCount);
     return false;
   }
 
-  if (vm.frameCount == FRAMES_MAX) {
+  if (vm.frameCount == FRAMES_MAX)
+  {
     runtimeError("Stack overflow.");
     return false;
   }
 
-  CallFrame* frame = &vm.frames[vm.frameCount++];
+  CallFrame *frame = &vm.frames[vm.frameCount++];
   frame->closure = closure;
   frame->ip = closure->function->chunk.code;
   frame->slots = vm.stackTop - argCount - 1;
   return true;
 }
 
-static bool callValue(Value callee, int argCount) {
-  if (IS_OBJ(callee)) {
-    switch (OBJ_TYPE(callee)) {
-      case OBJ_CLOSURE:
-        return call(AS_CLOSURE(callee), argCount);
-      case OBJ_NATIVE: {
-        NativeFn native = AS_NATIVE(callee);
-        Value result = native(argCount, vm.stackTop - argCount);
-        vm.stackTop -= argCount + 1;
-        push(result);
-        return true;
-      }
-      default:
-        break;
+static bool callValue(Value callee, int argCount)
+{
+  if (IS_OBJ(callee))
+  {
+    switch (OBJ_TYPE(callee))
+    {
+    case OBJ_CLOSURE:
+      return call(AS_CLOSURE(callee), argCount);
+    case OBJ_NATIVE:
+    {
+      NativeFn native = AS_NATIVE(callee);
+      Value result = native(argCount, vm.stackTop - argCount);
+      vm.stackTop -= argCount + 1;
+      push(result);
+      return true;
+    }
+    default:
+      break;
     }
   }
   runtimeError("Can only call functions and classes.");
@@ -174,8 +195,8 @@ static bool isFalsey(Value value)
 
 static void concatenate()
 {
-  ObjString *b = AS_STRING(pop());
-  ObjString *a = AS_STRING(pop());
+  ObjString *b = AS_STRING(peek(0));
+  ObjString *a = AS_STRING(peek(1));
 
   int length = a->length + b->length;
   char *chars = ALLOCATE(char, length + 1);
@@ -184,12 +205,16 @@ static void concatenate()
   chars[length] = '\0';
 
   ObjString *result = takeString(chars, length);
+
+  pop();
+  pop();
+
   push(OBJ_VAL(result));
 }
 
 static InterpretResult run()
 {
-  CallFrame* frame = &vm.frames[vm.frameCount - 1];
+  CallFrame *frame = &vm.frames[vm.frameCount - 1];
 
 #define READ_BYTE() (*frame->ip++)
 
@@ -218,7 +243,7 @@ static InterpretResult run()
   {
 #ifdef DEBUG_TRACE_EXECUTION
     printf("          ");
-    for (Value* slot = vm.stack; slot < vm.stackTop; slot++)
+    for (Value *slot = vm.stack; slot < vm.stackTop; slot++)
     {
       printf("[ ");
       printValue(*slot);
@@ -394,16 +419,20 @@ static InterpretResult run()
     }
     case OP_CLOSURE:
     {
-      ObjFunction* function = AS_FUNCTION(READ_CONSTANT());
-      ObjClosure* closure = newClosure(function);
+      ObjFunction *function = AS_FUNCTION(READ_CONSTANT());
+      ObjClosure *closure = newClosure(function);
       push(OBJ_VAL(closure));
-      for (int i = 0; i < closure->upvalueCount; i++) {
+      for (int i = 0; i < closure->upvalueCount; i++)
+      {
         uint8_t isLocal = READ_BYTE();
         uint8_t index = READ_BYTE();
-        if (isLocal) {
+        if (isLocal)
+        {
           closure->upvalues[i] =
               captureUpvalue(frame->slots + index);
-        } else {
+        }
+        else
+        {
           closure->upvalues[i] = frame->closure->upvalues[index];
         }
       }
@@ -446,7 +475,7 @@ InterpretResult interpret(const char *source)
     return INTERPRET_COMPILE_ERROR;
 
   push(OBJ_VAL(function));
-  ObjClosure* closure = newClosure(function);
+  ObjClosure *closure = newClosure(function);
   pop();
   push(OBJ_VAL(closure));
   call(closure, 0);

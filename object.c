@@ -14,9 +14,14 @@ static Obj *allocateObject(size_t size, ObjType type)
 {
   Obj *object = (Obj *)reallocate(NULL, 0, size);
   object->type = type;
-
+  object->isMarked = false;
   object->next = vm.objects;
   vm.objects = object;
+
+#ifdef DEBUG_LOG_GC
+  printf("%p allocate %zu for %d\n", (void *)object, size, type);
+#endif
+
   return object;
 }
 
@@ -43,7 +48,10 @@ static ObjString *allocateString(char *chars, int length,
   string->length = length;
   string->chars = chars;
   string->hash = hash;
+  push(OBJ_VAL(string));
   tableSet(&vm.strings, string, NIL_VAL);
+  pop();
+
   return string;
 }
 
@@ -95,21 +103,24 @@ static void printFunction(ObjFunction *function)
   printf("<fn %s>", function->name->chars);
 }
 
-ObjClosure* newClosure(ObjFunction* function) {
-  ObjUpvalue** upvalues = ALLOCATE(ObjUpvalue*, function->upvalueCount);
-  for (int i = 0; i < function->upvalueCount; i++) {
+ObjClosure *newClosure(ObjFunction *function)
+{
+  ObjUpvalue **upvalues = ALLOCATE(ObjUpvalue *, function->upvalueCount);
+  for (int i = 0; i < function->upvalueCount; i++)
+  {
     upvalues[i] = NULL;
   }
 
-  ObjClosure* closure = ALLOCATE_OBJ(ObjClosure, OBJ_CLOSURE);
+  ObjClosure *closure = ALLOCATE_OBJ(ObjClosure, OBJ_CLOSURE);
   closure->function = function;
   closure->upvalues = upvalues;
   closure->upvalueCount = function->upvalueCount;
   return closure;
 }
 
-ObjUpvalue* newUpvalue(Value* slot) {
-  ObjUpvalue* upvalue = ALLOCATE_OBJ(ObjUpvalue, OBJ_UPVALUE);
+ObjUpvalue *newUpvalue(Value *slot)
+{
+  ObjUpvalue *upvalue = ALLOCATE_OBJ(ObjUpvalue, OBJ_UPVALUE);
   upvalue->closed = NIL_VAL;
   upvalue->location = slot;
   upvalue->next = NULL;

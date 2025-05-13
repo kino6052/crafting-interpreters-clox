@@ -25,8 +25,15 @@ typedef struct
   Value *stackTop;
   Table globals;
   Table strings;
-  ObjUpvalue *openUpvalues;
-  Obj *objects;
+  ObjUpvalue* openUpvalues;
+  
+  size_t bytesAllocated;
+  size_t nextGC;
+  int grayCount;
+  int grayCapacity;
+  Obj** grayStack;
+  
+  Obj* objects;
 } VM;
 
 typedef enum
